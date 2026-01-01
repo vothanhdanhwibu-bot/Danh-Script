@@ -1,0 +1,250 @@
+-- ZAPORIUM GUI -
+
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Zap-Zaporium/Zap-is-Me/refs/heads/main/Zaporium.lua"))()
+
+local Window = library:CreateWindow("Scroll a Brainrot")
+local Main = Window:AddFolder("Main Features")
+
+local HIGH_TIER = {"Legendary", "Mythical", "Prismatic", "Super Tiny", "XXL", "Secret"}
+local PAUSE_DURATION = 4
+
+local autoEnabled = false
+local currentConnection
+local lastHandledSpot = nil
+local lastHighTime = 0
+local periodicThread
+local charAddedConn
+
+local function isHighTier(name)
+    for _, r in HIGH_TIER do
+        if r == name then return true end
+    end
+    return false
+end
+
+local function hasHighRarity(folder)
+    for _, itemFolder in ipairs(folder:GetChildren()) do
+        if not (itemFolder:IsA("Folder") or itemFolder:IsA("Model")) then continue end
+        local attachment = itemFolder:FindFirstChild("Attachment")
+        if not attachment then continue end
+        local brainrotInfo = attachment:FindFirstChild("BrainrotInfo")
+        if not brainrotInfo then continue end
+        local canvas = brainrotInfo:FindFirstChild("Canvas")
+        if not canvas then continue end
+        local infos = canvas:FindFirstChild("Infos")
+        if not infos then continue end
+        local rarityFrame = infos:FindFirstChild("Rarity")
+        if not rarityFrame then continue end
+        for _, child in ipairs(rarityFrame:GetChildren()) do
+            if isHighTier(child.Name) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function getPromptForHighFolder(folder)
+    local proximityParent = folder:FindFirstChild("ProximityParent")
+    if not proximityParent then return nil end
+    local brainrotPickup = proximityParent:FindFirstChild("BrainrotPickup")
+    if brainrotPickup and brainrotPickup:IsA("ProximityPrompt") then
+        return brainrotPickup
+    end
+    local scrollProximity = proximityParent:FindFirstChild("ScrollProximity")
+    if scrollProximity and scrollProximity:IsA("ProximityPrompt") then
+        return scrollProximity
+    end
+    return nil
+end
+
+local function findHighPromptAndFolder(spot)
+    for _, potentialFolder in ipairs(spot:GetChildren()) do
+        if not (potentialFolder:IsA("Folder") or potentialFolder:IsA("Model")) then continue end
+        local proximityParent = potentialFolder:FindFirstChild("ProximityParent")
+        if not proximityParent then continue end
+        if hasHighRarity(potentialFolder) then
+            local prompt = getPromptForHighFolder(potentialFolder)
+            if prompt then
+                return prompt, potentialFolder
+            end
+        end
+    end
+    return nil, nil
+end
+
+local function findScrollPrompt(spot)
+    for _, potentialFolder in ipairs(spot:GetChildren()) do
+        if not (potentialFolder:IsA("Folder") or potentialFolder:IsA("Model")) then continue end
+        local proximityParent = potentialFolder:FindFirstChild("ProximityParent")
+        if not proximityParent then continue end
+        local scrollProximity = proximityParent:FindFirstChild("ScrollProximity")
+        if scrollProximity and scrollProximity:IsA("ProximityPrompt") then
+            return scrollProximity
+        end
+    end
+    return nil
+end
+
+local function triggerScrollWithRetry(spot, maxRetries)
+    maxRetries = maxRetries or 3
+    for i = 1, maxRetries do
+        local scrollPrompt = findScrollPrompt(spot)
+        if scrollPrompt then
+            print(">>> SCROLL (att " .. i .. ") spot " .. spot.Name .. " <<<")
+            fireproximityprompt(scrollPrompt)
+            return true
+        end
+        task.wait(0.25)
+    end
+    return false
+end
+
+local function handleSpot(spot)
+    if not autoEnabled or not spot then return end
+
+    if tick() - lastHighTime < PAUSE_DURATION then
+        return
+    end
+
+    print("CHK: " .. spot.Name)
+
+    local highPrompt, highFolder = nil, nil
+    for attempt = 1, 3 do
+        highPrompt, highFolder = findHighPromptAndFolder(spot)
+        if highPrompt then break end
+        task.wait(0.25)
+    end
+
+    if highPrompt then
+        print("🚀 HIGH (" .. highFolder.Name .. ") → " .. highPrompt.Name)
+        fireproximityprompt(highPrompt)
+        lastHighTime = tick()
+        return
+    end
+
+    triggerScrollWithRetry(spot)
+end
+
+local function getCurrentSpot()
+    local character = player.Character
+    if not character then return nil end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local closestSpot = nil
+    local closestDist = math.huge
+
+    for _, spot in ipairs(workspace.Map.Spots:GetChildren()) do
+        local base = spot:FindFirstChild("Base")
+        if not base then continue end
+        local extras = base:FindFirstChild("Extras")
+        if not extras then continue end
+        local fakeSpawn = extras:FindFirstChild("FakeSpawn")
+        if not fakeSpawn then continue end
+
+        local fakeSL = fakeSpawn:FindFirstChild("FakeSL") or fakeSpawn:FindFirstChildWhichIsA("BasePart")
+        if fakeSL and fakeSL:IsA("BasePart") then
+            local dist = (hrp.Position - fakeSL.Position).Magnitude
+            if dist < closestDist then
+                closestDist = dist
+                closestSpot = spot
+            end
+        end
+    end
+
+    return closestSpot
+end
+
+local function setupSpotMonitoring()
+    if not autoEnabled then return end
+
+    if currentConnection then
+        currentConnection:Disconnect()
+        currentConnection = nil
+    end
+
+    local spot = getCurrentSpot()
+    if not spot or spot == lastHandledSpot then return end
+    lastHandledSpot = spot
+
+    print("MON: " .. spot.Name)
+
+    currentConnection = spot.ChildAdded:Connect(function(child)
+        task.wait(0.6)
+        handleSpot(spot)
+    end)
+
+    handleSpot(spot)
+end
+
+-- Character respawn handler
+charAddedConn = player.CharacterAdded:Connect(function()
+    task.wait(2)
+    if autoEnabled then
+        lastHandledSpot = nil
+        lastHighTime = 0
+        setupSpotMonitoring()
+    end
+end)
+
+-- Initial char check  
+if player.Character then
+    task.spawn(function()
+        task.wait(2)
+        if autoEnabled then
+            setupSpotMonitoring()
+        end
+    end)
+end
+
+-- Toggle
+Main:AddToggle({
+    text = "Auto Scroll",
+    state = false,
+    flag = "autoscroll",
+    callback = function(v)
+        autoEnabled = v
+        if v then
+            -- Enable
+            if player.Character then
+                setupSpotMonitoring()
+            end
+            -- Start periodic
+            if periodicThread then
+                task.cancel(periodicThread)
+            end
+            periodicThread = task.spawn(function()
+                while autoEnabled do
+                    task.wait(1)
+                    local spot = getCurrentSpot()
+                    if spot then
+                        handleSpot(spot)
+                    end
+                end
+            end)
+        else
+            -- Disable & cleanup
+            if currentConnection then
+                currentConnection:Disconnect()
+                currentConnection = nil
+            end
+            if periodicThread then
+                task.cancel(periodicThread)
+                periodicThread = nil
+            end
+            lastHandledSpot = nil
+            lastHighTime = 0
+        end
+    end
+})
+
+Main:AddLabel({text = "Auto Get"})
+Main:AddLabel({text = "YT: Danh"})
+
+library:Init()
+
+print("Danh GUI Loaded!")
