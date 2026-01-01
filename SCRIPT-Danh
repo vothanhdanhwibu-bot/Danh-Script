@@ -1,4 +1,4 @@
--- ZAPORIUM GUI -
+-- Danh GUI -
 
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
@@ -8,7 +8,7 @@ local library = loadstring(game:HttpGet("https://raw.githubusercontent.com/Zap-Z
 local Window = library:CreateWindow("Scroll a Brainrot")
 local Main = Window:AddFolder("Main Features")
 
-local HIGH_TIER = {"Legendary", "Mythical", "Prismatic", "Super Tiny", "XXL", "Secret"}
+local HIGH_TIER = {"Legendary", "Mythical", "Prismatic", "Super Tiny", "XXL", "Secret", "OG", }
 local PAUSE_DURATION = 4
 
 local autoEnabled = false
